@@ -141,6 +141,8 @@ class GhostAI:
 
         ghost_order = sorted(ghost_order, key=lambda x: ghost_distances[x])
 
+        distance_1_flag = False # 是否已经有一个ghost距离为1
+
         for ghost_id in ghost_order:
             current_pos = game_state.ghosts_pos[ghost_id]
             valid_moves = self.get_valid_moves(current_pos, game_state)
@@ -150,39 +152,46 @@ class GhostAI:
                 continue
 
             if ghost_distances[ghost_id] == 1:
-                moves[ghost_id] = parse((pacman_pos[0] - current_pos[0], pacman_pos[1] - current_pos[1])) # 如果距离为1直接追逐吃豆人
+                if distance_1_flag and len(valid_moves) > 1:
+                    # 如果已经有一个ghost距离为1，且当前ghost有多个可选方向，则避免两个ghost重叠
+                    candidate_moves = [move for move in valid_moves if move[0][0] != pacman_pos[0] or move[0][1] != pacman_pos[1]]
+                else:
+                    # 否则直接追吃豆人
+                    distance_1_flag = True
+                    moves[ghost_id] = parse((pacman_pos[0] - current_pos[0], pacman_pos[1] - current_pos[1]))
+                    continue
 
             else:
-                # 如果距离大于1，则考虑最大程度限制吃豆人map_distance小于ghost_map_distance的格子数量
-                min_controlled_area = float("inf")
-                min_distance = float("inf")
-                best_move = []
+                candidate_moves = valid_moves.copy()
 
-                for(new_pos, _) in valid_moves:
-                    new_ghost_positions = game_state.ghosts_pos.copy()
-                    new_ghost_positions[ghost_id] = np.array(new_pos)
-                    controlled_area = np.sum(self.get_pacman_controlled_area(pacman_pos, new_ghost_positions, game_state))
-                    if controlled_area < min_controlled_area:
+            # 考虑最大程度限制吃豆人map_distance小于ghost_map_distance的格子数量
+            min_controlled_area = float("inf")
+            min_distance = float("inf")
+            best_move = []
+
+            for(new_pos, _) in candidate_moves:
+                new_ghost_positions = game_state.ghosts_pos.copy()
+                new_ghost_positions[ghost_id] = np.array(new_pos)
+                controlled_area = np.sum(self.get_pacman_controlled_area(pacman_pos, new_ghost_positions, game_state))
+                if controlled_area < min_controlled_area:
+                    best_move.clear()
+                    best_move.append(new_pos)
+                    min_controlled_area = controlled_area
+                    min_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
+                elif controlled_area == min_controlled_area:
+                    new_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
+                    if new_distance < min_distance:
                         best_move.clear()
                         best_move.append(new_pos)
-                        min_controlled_area = controlled_area
-                        min_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
-                    elif controlled_area == min_controlled_area:
-                        new_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
-                        if new_distance < min_distance:
-                            best_move.clear()
-                            best_move.append(new_pos)
-                            min_distance = new_distance
-                        elif new_distance == min_distance:
-                            best_move.append(new_pos)
+                        min_distance = new_distance
+                    elif new_distance == min_distance:
+                        best_move.append(new_pos)
                         
-                if len(best_move) == 1:
-                    moves[ghost_id] = parse((best_move[0][0] - current_pos[0], best_move[0][1] - current_pos[1]))
-                else:
-                    random_move = random.choice(best_move)
-                    moves[ghost_id] = parse((random_move[0] - current_pos[0], random_move[1] - current_pos[1]))            
-            
-            continue
+            if len(best_move) == 1:
+                moves[ghost_id] = parse((best_move[0][0] - current_pos[0], best_move[0][1] - current_pos[1]))
+            else:
+                random_move = random.choice(best_move)
+                moves[ghost_id] = parse((random_move[0] - current_pos[0], random_move[1] - current_pos[1]))            
 
         return moves
 
