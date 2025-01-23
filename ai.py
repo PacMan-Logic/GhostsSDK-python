@@ -94,102 +94,32 @@ class GhostAI:
             self.position_history[ghost_id].pop(0)
 
     def choose_moves(self, game_state: GameState):
-        moves = []
+        moves = [0, 0, 0]
         pacman_pos = game_state.pacman_pos
 
+        ghost_distances = [float("inf"), float("inf"), float("inf")]
+        ghost_order = [0, 1, 2]
+
         for ghost_id in range(3):
+            # 计算到吃豆人的距离
+            current_pos = game_state.ghosts_pos[ghost_id]
+            a_star_path = self.a_star_search(current_pos, pacman_pos, game_state)
+            ghost_distances[ghost_id] = len(a_star_path) if a_star_path else float("inf")
+
+        ghost_order = sorted(ghost_order, key=lambda x: ghost_distances[x])
+
+        for ghost_id in ghost_order:
             current_pos = game_state.ghosts_pos[ghost_id]
             valid_moves = self.get_valid_moves(current_pos, game_state)
 
             if not valid_moves:
-                moves.append(Direction.STAY.value)
+                moves[ghost_id] = Direction.STAY.value
                 continue
 
-            # 计算到吃豆人的距离
-            a_star_path = self.a_star_search(current_pos, pacman_pos, game_state)
-            distance_to_pacman = len(a_star_path) if a_star_path else float("inf")
-
-            # 如果距离很近（比如小于3），直接追击
-            if distance_to_pacman <= 3:
-                best_move = (
-                    a_star_path[0],
-                    parse(
-                        (
-                            a_star_path[0][0] - current_pos[0],
-                            a_star_path[0][1] - current_pos[1],
-                        )
-                    ),
-                )
-            else:
-                # 距离较远时使用更复杂的策略
-                target_pos = pacman_pos
-                # 不同幽灵的策略
-                if ghost_id == 0:
-                    # 通过A*寻路算法直接追击
-                    pass
-                elif ghost_id == 1:
-                    if (
-                        current_pos[0] == game_state.ghosts_pos[0][0]
-                        and current_pos[1] == game_state.ghosts_pos[0][1]
-                    ):
-                        # 第二个幽灵与第一个幽灵重合时，随机移动
-                        best_move = random.choice(valid_moves)
-                        self.update_history(ghost_id, best_move[0])
-                        moves.append(best_move[1])
-                        continue
-                    # 预测吃豆人移动方向
-                    dx = pacman_pos[0] - current_pos[0]
-                    dy = pacman_pos[1] - current_pos[1]
-                    predicted_x = pacman_pos[0] + (1 if dx > 0 else -1 if dx < 0 else 0)
-                    predicted_y = pacman_pos[1] + (1 if dy > 0 else -1 if dy < 0 else 0)
-                    if (
-                        0 <= predicted_x < game_state.board_size
-                        and 0 <= predicted_y < game_state.board_size
-                        and game_state.board[predicted_x][predicted_y] != 0
-                    ):
-                        target_pos = np.array([predicted_x, predicted_y])
-                else:
-                    if (
-                        current_pos[0] == game_state.ghosts_pos[0][0]
-                        and current_pos[1] == game_state.ghosts_pos[0][1]
-                    ) or (
-                        current_pos[0] == game_state.ghosts_pos[1][0]
-                        and current_pos[1] == game_state.ghosts_pos[1][1]
-                    ):
-
-                        # 第三个幽灵与第一个或第二个幽灵重合时，随机移动
-                        best_move = random.choice(valid_moves)
-                        self.update_history(ghost_id, best_move[0])
-                        moves.append(best_move[1])
-                        continue
-                    # 尝试切断路线
-                    other_ghost = game_state.ghosts_pos[0]  # 使用第一个幽灵作为参考
-                    dx = pacman_pos[0] - other_ghost[0]
-                    dy = pacman_pos[1] - other_ghost[1]
-                    intercept_x = pacman_pos[0] + (1 if dx > 0 else -1 if dx < 0 else 0)
-                    intercept_y = pacman_pos[1] + (1 if dy > 0 else -1 if dy < 0 else 0)
-                    intercept_x = max(0, min(intercept_x, game_state.board_size - 1))
-                    intercept_y = max(0, min(intercept_y, game_state.board_size - 1))
-                    if game_state.board[intercept_x][intercept_y] != 0:
-                        target_pos = np.array([intercept_x, intercept_y])
-
-                path = self.a_star_search(current_pos, target_pos, game_state)
-
-                if path:
-                    best_move = (
-                        path[0],
-                        parse(
-                            (path[0][0] - current_pos[0], path[0][1] - current_pos[1])
-                        ),
-                    )
-                else:
-                    best_move = min(
-                        valid_moves,
-                        key=lambda x: self.manhattan_distance(x[0], pacman_pos),
-                    )
-
+            best_move = random.choice(valid_moves)
             self.update_history(ghost_id, best_move[0])
-            moves.append(best_move[1])
+            moves[ghost_id] = best_move[1]
+            continue
 
         return moves
 
