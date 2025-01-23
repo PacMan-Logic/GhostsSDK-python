@@ -93,6 +93,39 @@ class GhostAI:
         if len(self.position_history[ghost_id]) > self.history_length:
             self.position_history[ghost_id].pop(0)
 
+    def get_map_distance(self, ghost_id, pacman_position: np.ndarray, ghost_positions: list[np.ndarray], game_state: GameState):
+        if ghost_id == -1:
+            pos = pacman_position
+        else:
+            pos = ghost_positions[ghost_id]
+
+        # bfs
+        queue = [pos]
+        visited = set()
+        visited.add(tuple(pos))
+        distance = 0
+        map_distance = np.zeros((game_state.board_size, game_state.board_size))
+        while queue:
+            distance += 1
+            for _ in range(len(queue)):
+                pos = queue.pop(0)
+                for new_pos, _ in self.get_valid_moves(pos, game_state):
+                    if tuple(new_pos) not in visited:
+                        queue.append(new_pos)
+                        visited.add(tuple(new_pos))
+                        map_distance[new_pos[0], new_pos[1]] = distance
+        return map_distance
+    
+    def get_pacman_controlled_area(self, pacman_position, ghost_positions, game_state: GameState):
+        ghost_map_distance = [self.get_map_distance(ghost_id, pacman_position, ghost_positions, game_state) for ghost_id in range(3)]
+        pacman_map_distance = self.get_map_distance(-1, pacman_position, ghost_positions, game_state)
+        controlled_area = np.zeros((game_state.board_size, game_state.board_size))
+        for x in range(game_state.board_size):
+            for y in range(game_state.board_size):
+                if pacman_map_distance[x, y] < min([ghost_map_distance[ghost_id][x, y] for ghost_id in range(3)]):
+                    controlled_area[x, y] = 1
+        return controlled_area
+
     def choose_moves(self, game_state: GameState):
         moves = [0, 0, 0]
         pacman_pos = game_state.pacman_pos
@@ -116,14 +149,42 @@ class GhostAI:
                 moves[ghost_id] = Direction.STAY.value
                 continue
 
-            best_move = random.choice(valid_moves)
-            self.update_history(ghost_id, best_move[0])
-            moves[ghost_id] = best_move[1]
+            if ghost_distances[ghost_id] == 1:
+                moves[ghost_id] = parse((pacman_pos[0] - current_pos[0], pacman_pos[1] - current_pos[1])) # 如果距离为1直接追逐吃豆人
+
+            else:
+                # 如果距离大于1，则考虑最大程度限制吃豆人map_distance小于ghost_map_distance的格子数量
+                min_controlled_area = float("inf")
+                min_distance = float("inf")
+                best_move = []
+
+                for(new_pos, _) in valid_moves:
+                    new_ghost_positions = game_state.ghosts_pos.copy()
+                    new_ghost_positions[ghost_id] = np.array(new_pos)
+                    controlled_area = np.sum(self.get_pacman_controlled_area(pacman_pos, new_ghost_positions, game_state))
+                    if controlled_area < min_controlled_area:
+                        best_move.clear()
+                        best_move.append(new_pos)
+                        min_controlled_area = controlled_area
+                        min_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
+                    elif controlled_area == min_controlled_area:
+                        new_distance = len(self.a_star_search(new_pos, pacman_pos, game_state))
+                        if new_distance < min_distance:
+                            best_move.clear()
+                            best_move.append(new_pos)
+                            min_distance = new_distance
+                        elif new_distance == min_distance:
+                            best_move.append(new_pos)
+                        
+                if len(best_move) == 1:
+                    moves[ghost_id] = parse((best_move[0][0] - current_pos[0], best_move[0][1] - current_pos[1]))
+                else:
+                    random_move = random.choice(best_move)
+                    moves[ghost_id] = parse((random_move[0] - current_pos[0], random_move[1] - current_pos[1]))            
+            
             continue
 
         return moves
 
-# TODO: 你需要实现一个ai函数
-
-ai_func = GhostAI().choose_moves # TODO: 你需要把ai_func替换为自己的ai函数
+ai_func = GhostAI().choose_moves
 __all__ = ["ai_func"]
